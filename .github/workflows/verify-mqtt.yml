@@ -1,0 +1,48 @@
+name: Verify MQTT sync
+
+on:
+  push:
+    paths:
+      - ".github/workflows/verify-mqtt.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test retained sync
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/mqtt-test
+          cd /tmp/mqtt-test
+          npm init -y >/dev/null 2>&1
+          npm install mqtt@5.14.1 >/dev/null 2>&1
+          cat > test.js <<'NODE'
+          const mqtt=require('mqtt');
+          const url='wss://broker.emqx.io:8084/mqtt';
+          const topic='nuestro-hogar/7f2d8c4a9e1b6f305d7c2a8e4b1f9362/state';
+          const marker='verify-'+Date.now();
+          let got=false;
+          const c=mqtt.connect(url,{clientId:'verify_'+Math.random().toString(16).slice(2),clean:true,connectTimeout:10000,reconnectPeriod:0});
+          const timer=setTimeout(()=>{console.error('TIMEOUT');c.end(true);process.exit(2)},20000);
+          c.on('error',e=>{console.error('ERROR',e.message);});
+          c.on('connect',()=>{
+            console.log('CONNECTED');
+            c.subscribe(topic,{qos:1},err=>{
+              if(err) throw err;
+              c.publish(topic,JSON.stringify({items:[],updatedAt:new Date().toISOString(),home:'Franklin-Andrea',verify:marker}),{qos:1,retain:true});
+            });
+          });
+          c.on('message',(t,p)=>{
+            const s=p.toString();
+            console.log('MESSAGE',s);
+            if(s.includes(marker)){
+              got=true;clearTimeout(timer);
+              setTimeout(()=>c.end(false,{},()=>process.exit(0)),250);
+            }
+          });
+          NODE
+          node test.js
