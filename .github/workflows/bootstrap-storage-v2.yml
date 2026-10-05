@@ -1,0 +1,27 @@
+name: Bootstrap shared storage v2
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bootstrap-storage-v2.yml"
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create shared JSON blob
+        shell: bash
+        run: |
+          set -e
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          code="$(curl -sS -w '%{http_code}' -D "$headers" -o "$body" -X POST "https://superjsonblob.com/api/jsonBlob" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            --data '{"items":[],"updatedAt":"2026-10-05T00:00:00Z","home":"Franklin-Andrea"}')"
+          echo "HTTP_CODE=$code"
+          echo "---- HEADERS ----"
+          cat "$headers"
+          echo "---- BODY ----"
+          cat "$body"
+          test "$code" = "201"
