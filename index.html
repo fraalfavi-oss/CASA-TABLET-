@@ -501,7 +501,7 @@ function buildEditorQr(){
  const box=document.querySelector('[data-editor-qr-box]');
  if(!box)return;
  box.innerHTML='';
- const target='https://raw.githack.com/fraalfavi-oss/CASA-TABLET-/main/index.html#e';
+ const target=location.href.split('#')[0]+'#e';
  const img=document.createElement('img');
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
