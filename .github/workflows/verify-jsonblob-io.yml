@@ -1,0 +1,30 @@
+name: Verify jsonblob io
+
+on:
+  push:
+    paths:
+      - ".github/workflows/verify-jsonblob-io.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create and check CORS
+        shell: bash
+        run: |
+          set -e
+          ID="8d6adbb7-945c-4c73-9a52-2b1f6e409a61"
+          URL="https://jsonblob.io/$ID"
+          echo "---- CREATE ----"
+          curl -sS -D - -o /tmp/body -X POST "$URL" \
+            -H "Content-Type: application/json" \
+            --data '{"items":[],"updatedAt":"2026-10-05T00:00:00Z","home":"Franklin-Andrea"}'
+          cat /tmp/body
+          echo
+          echo "---- GET WITH ORIGIN ----"
+          curl -sS -D - -o /dev/null "$URL" -H "Origin: https://htmlpreview.github.io"
+          echo "---- OPTIONS POST ----"
+          curl -sS -D - -o /dev/null -X OPTIONS "$URL" \
+            -H "Origin: https://htmlpreview.github.io" \
+            -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: content-type"
