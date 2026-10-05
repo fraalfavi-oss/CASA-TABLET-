@@ -1,0 +1,25 @@
+name: Bootstrap shared storage
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bootstrap-storage.yml"
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create shared JSON blob
+        shell: bash
+        run: |
+          set -e
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          curl -sS -D "$headers" -o "$body" -X POST "https://jsonblob.com/api/jsonBlob" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            --data '{"items":[],"updatedAt":"2026-10-05T00:00:00Z","home":"Franklin-Andrea"}'
+          echo "---- JSONBLOB HEADERS ----"
+          cat "$headers"
+          echo "---- JSONBLOB BODY ----"
+          cat "$body"
