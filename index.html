@@ -377,44 +377,67 @@ const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const pad=n=>String(n).padStart(2,'0');
 const localDate=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const defaults=[];
-const SYNC_ID='8d6adbb7-945c-4c73-9a52-2b1f6e409a61';
-const SYNC_URL='https://jsonblob.io/'+SYNC_ID;
-let syncBusy=false,syncOnline=false,lastRemote='';
+const MQTT_URL='wss://broker.emqx.io:8084/mqtt';
+const MQTT_TOPIC='nuestro-hogar/7f2d8c4a9e1b6f305d7c2a8e4b1f9362/state';
+let syncClient=null,syncOnline=false,syncReceived=false,syncStarted=false,lastSentItems='';
 function syncPayload(){return {items:items,updatedAt:new Date().toISOString(),home:'Franklin-Andrea'};}
-async function remoteSave(force=false){
- if(syncBusy)return;
+function remoteSave(force=false){
+ if(!syncClient||!syncClient.connected)return;
+ const state=JSON.stringify(items);
+ if(!force&&state===lastSentItems)return;
  const body=JSON.stringify(syncPayload());
- if(!force&&body===lastRemote)return;
- syncBusy=true;
- try{
-  const r=await fetch(SYNC_URL,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body,cache:'no-store'});
-  if(!r.ok)throw new Error('sync '+r.status);
-  syncOnline=true;lastRemote=body;status();
- }catch(e){syncOnline=false;status();}
- finally{syncBusy=false;}
+ syncClient.publish(MQTT_TOPIC,body,{qos:1,retain:true},err=>{
+  syncOnline=!err;
+  if(!err)lastSentItems=state;
+  status();
+ });
 }
-async function remoteLoad(){
- if(syncBusy)return;
+function applyRemote(raw){
  try{
-  const r=await fetch(SYNC_URL,{cache:'no-store',headers:{'Accept':'application/json'}});
-  if(r.status===404){await remoteSave(true);return;}
-  if(!r.ok)throw new Error('sync '+r.status);
-  const raw=await r.json();
-  const fresh=clean(Array.isArray(raw)?raw:raw&&raw.items);
-  if(fresh){
-   const now=JSON.stringify(items),incoming=JSON.stringify(fresh);
-   lastRemote=JSON.stringify(Array.isArray(raw)?{items:fresh}:raw);
-   syncOnline=true;
-   if(incoming!==now){
-    items=fresh;
-    try{localStorage.setItem(key,JSON.stringify(items));}catch(e){}
-    render();
-   }
+  const data=typeof raw==='string'?JSON.parse(raw):raw;
+  const fresh=clean(Array.isArray(data)?data:data&&data.items);
+  if(!fresh)return;
+  syncReceived=true;
+  const incoming=JSON.stringify(fresh);
+  lastSentItems=incoming;
+  syncOnline=true;
+  if(incoming!==JSON.stringify(items)){
+   items=fresh;
+   try{localStorage.setItem(key,incoming);}catch(e){}
+   render();
   }
   status();
- }catch(e){syncOnline=false;status();}
+ }catch(e){}
 }
-
+function startMqtt(){
+ if(syncStarted)return;
+ syncStarted=true;
+ const connect=()=>{
+  try{
+   syncClient=window.mqtt.connect(MQTT_URL,{
+    clientId:'hogar_'+Math.random().toString(16).slice(2,10)+Date.now().toString(36),
+    clean:true,reconnectPeriod:2000,connectTimeout:10000
+   });
+   syncClient.on('connect',()=>{
+    syncOnline=true;syncReceived=false;status();
+    syncClient.subscribe(MQTT_TOPIC,{qos:1},err=>{
+     if(err){syncOnline=false;status();return;}
+     setTimeout(()=>{if(!syncReceived)remoteSave(true);},2500);
+    });
+   });
+   syncClient.on('message',(topic,payload)=>{if(topic===MQTT_TOPIC)applyRemote(payload.toString());});
+   syncClient.on('offline',()=>{syncOnline=false;status();});
+   syncClient.on('close',()=>{syncOnline=false;status();});
+   syncClient.on('error',()=>{syncOnline=false;status();});
+  }catch(e){syncOnline=false;status();}
+ };
+ if(window.mqtt){connect();return;}
+ const s=document.createElement('script');
+ s.src='https://cdn.jsdelivr.net/npm/mqtt@5.14.1/dist/mqtt.min.js';
+ s.onload=connect;
+ s.onerror=()=>{syncOnline=false;status();};
+ document.head.append(s);
+}
 function clean(data){return Array.isArray(data)?data.filter(x=>x&&typeof x.id==='string'&&typeof x.text==='string'&&['note','task','event'].includes(x.kind)&&['Franklin','Andrea'].includes(x.author)).map(x=>({...x,done:x.kind==='task'&&!!x.done,eventDate:x.kind==='event'&&typeof x.eventDate==='string'?x.eventDate:'',eventTime:x.kind==='event'&&typeof x.eventTime==='string'?x.eventTime:''})):null;}
 try{
  const saved=clean(JSON.parse(localStorage.getItem(key)));
@@ -486,7 +509,7 @@ function buildEditorQr(){
  box.append(img);
  box.title='Editar nuestro hogar';
 }
-function clock(){const d=new Date();$('[data-clock]').textContent=new Intl.DateTimeFormat('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);$('[data-date]').textContent=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'short'}).format(d);}clock();setInterval(clock,1000);setInterval(()=>{if(!$('[data-editor-view]').hidden||!$('[data-largeqr]').hidden||document.hidden)return;const notes=shown();if(notes.length>1){page=(page+1)%notes.length;renderNote();}},20000);render();status();remoteLoad().finally(()=>buildEditorQr());setInterval(remoteLoad,4000);if(location.hash==='#editar'||location.hash==='#e')view('editor');if(location.hash==='#agenda'){view('editor');reset();setKind('event');renderEditor();}window.addEventListener('storage',e=>{if(e.key===key){try{const fresh=clean(JSON.parse(e.newValue));if(fresh){items=fresh;render();remoteSave();}}catch(error){}}});
+function clock(){const d=new Date();$('[data-clock]').textContent=new Intl.DateTimeFormat('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);$('[data-date]').textContent=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'short'}).format(d);}clock();setInterval(clock,1000);setInterval(()=>{if(!$('[data-editor-view]').hidden||!$('[data-largeqr]').hidden||document.hidden)return;const notes=shown();if(notes.length>1){page=(page+1)%notes.length;renderNote();}},20000);render();status();startMqtt();buildEditorQr();if(location.hash==='#editar'||location.hash==='#e')view('editor');if(location.hash==='#agenda'){view('editor');reset();setKind('event');renderEditor();}window.addEventListener('storage',e=>{if(e.key===key){try{const fresh=clean(JSON.parse(e.newValue));if(fresh){items=fresh;render();remoteSave();}}catch(error){}}});
 })();
 </script>
 </div>
