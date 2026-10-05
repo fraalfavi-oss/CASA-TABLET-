@@ -397,6 +397,9 @@ function applyRemote(raw){
   const data=typeof raw==='string'?JSON.parse(raw):raw;
   const fresh=clean(Array.isArray(data)?data:data&&data.items);
   if(!fresh)return;
+  if(!syncReceived&&fresh.length===0&&items.length>0){
+   syncReceived=true;syncOnline=true;status();remoteSave(true);return;
+  }
   syncReceived=true;
   const incoming=JSON.stringify(fresh);
   lastSentItems=incoming;
