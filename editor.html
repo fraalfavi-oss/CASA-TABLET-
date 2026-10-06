@@ -387,7 +387,6 @@ const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const pad=n=>String(n).padStart(2,'0');
 const localDate=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const defaults=[];
-const MQTT_URL='wss://broker.emqx.io:8084/mqtt';
 const REMOTE_URL='https://mantledb.sh/v2/casa-tablet-fa-7f2d8c4a9e1b6f305d7c2a8e4b1f9362/shared-state';
 const PUSH_TOPIC='casa-tablet-fa-7f2d8c4a9e1b6f305d7c2a8e4b1f9362-sync';
 const PUSH_SSE='https://ntfy.sh/'+PUSH_TOPIC+'/sse?since=10s';
