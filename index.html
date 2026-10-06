@@ -501,13 +501,13 @@ function buildEditorQr(){
  const box=document.querySelector('[data-editor-qr-box]');
  if(!box)return;
  box.innerHTML='';
- const target=location.href.split('#')[0]+'#e';
+ const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html';
  const img=document.createElement('img');
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
  img.style.cssText='display:block;width:90px;height:90px;background:#fff;border-radius:4px';
  img.src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data='+encodeURIComponent(target);
- img.onerror=()=>{box.innerHTML='';const a=document.createElement('a');a.href='#e';a.textContent='Abrir editor';a.style.cssText='font-size:10px;color:#9b513a;text-align:center';box.append(a);};
+ img.onerror=()=>{box.innerHTML='';const a=document.createElement('a');a.href=target;a.textContent='Abrir editor';a.style.cssText='font-size:10px;color:#9b513a;text-align:center';box.append(a);};
  box.style.padding='3px';
  box.append(img);
  box.title='Editar nuestro hogar';
