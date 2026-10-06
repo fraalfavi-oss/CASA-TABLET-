@@ -506,7 +506,7 @@ function buildEditorQr(){
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
  img.style.cssText='display:block;width:90px;height:90px;background:#fff;border-radius:4px';
- img.src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data='+encodeURIComponent(target);
+ img.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZoAAAGaAQAAAAAefbjOAAADC0lEQVR4nO2cTW7jOBBGXw0FZCkBOYCPIt1skCP1DaSj5AbUMgCFbxb8kZJedTtjO3JpYdikHkRChWLVV6RN/PG1/PPnDDjkkEMOOeSQQ+eErFwdLMNmLENpAzaDtd4w3WV4Dt0eGiVJsTTatJpJMcim9UU2ESRJ+gzdbngO3R5aiwOwf2MQ9JJNbKa3ATQD2YPca3gO3RFaOxjfO1guEmPc6lrx7U9y6EdAy7CZ3i4fppnNzC7p/3qSQw8J1ZWgF7AC46/XZGPcMPogWF8EKxyVrAefk0PfAC1mZja05vVFjO8dNgE2sVlNPe4yPIdu7SO+SNli3Uysm7FcEvp6w4PPyaFrIHJWOUYAgjT3KScXmvtE7th7JUnzg8/JoWsgyktu3xSDjvJEn5AiaHaLeAqo+Aj6mlKM2SJS7Wji1Bib+Tz4nBy6BmqrRrGD8uJj0O4ZoK9y5egWcXaorRqhmYWKj5j7uojQt59uEWeHDotDsQNCDiuyt8jhZQsr3EecHvrdR0RyMJGdwlwXjEPw6RZxZqhplhHoP0ysoGUI2Bi3Tqxd0jKFBIQafT74nBy6Bjpkn2WZ2Nv6GnKWTKSmpe4jzgx9Uqj6RBUggo63RNcjngb67CPC0SmMBz2ipaVuEWeHDnrEIesoFpHIUkRRsfFc44mgPsGSd0ltlrfNLAN574zeLsoFj7sNz6GbQcc4omjXib3cBU2X2gse7iPODFWL0G4CnyscB2UieRzxBNDRIspVi52qcURNPTzXeCYob57rsImgcl5jAOm9w2zYjDGCTXcankM3g5pnUMs1YK9v1cKXDnUw9xFPAO1nujQTylENxaB8xIu1iN0l1PgRc3LoKqhVN20CSni5dvWjT3nbfun9GXNy6Lo4oh3qzMbwItgdhZkdkpCfMieHvg3S2+WjHPqbgFLzevdTfs8Adb+1rAZjRIBguSQMDC2DV8OfAfp6pkuwdQKw8ddrMujy1ggb4+vth+fQzSH2nJPD1rq6faqUPZu87QrV6SHzfyZzyCGHHHLIIYf+EvoPIwCWOywoe5AAAAAASUVORK5CYII=';
  img.onerror=()=>{box.innerHTML='';const a=document.createElement('a');a.href=target;a.textContent='Abrir editor';a.style.cssText='font-size:10px;color:#9b513a;text-align:center';box.append(a);};
  box.style.padding='3px';
  box.append(img);
