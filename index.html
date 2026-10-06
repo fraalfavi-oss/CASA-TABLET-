@@ -389,84 +389,102 @@ const localDate=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())
 const defaults=[];
 const MQTT_URL='wss://broker.emqx.io:8084/mqtt';
 const MQTT_TOPIC='nuestro-hogar/7f2d8c4a9e1b6f305d7c2a8e4b1f9362/state';
-const SYNC_META_KEY=key+'-sync-meta-v2';
-let syncClient=null,syncOnline=false,syncReceived=false,syncStarted=false,syncReady=false,lastSentItems='',pendingOnlineSave=false,localUpdatedAt=0,initialSyncTimer=null;
+const MQTT_BROKERS=[
+ {name:'EMQX',url:'wss://broker.emqx.io:8084/mqtt',options:{username:'emqx_test',password:'emqx_test'}},
+ {name:'HiveMQ',url:'wss://broker.hivemq.com:8884/mqtt',options:{}}
+];
+const SYNC_META_KEY=key+'-sync-meta-v3';
+let syncClient=null,syncClients=[],syncOnline=false,syncReceived=false,syncStarted=false,syncReady=false,lastSentItems='',pendingOnlineSave=false,localUpdatedAt=0,initialSyncTimer=null,lastAppliedRemoteAt=0;
 window.__HOGAR_GET_ITEMS__=()=>items.map(x=>({...x}));
 function parseSyncTime(v){if(typeof v==='number'&&isFinite(v))return v;if(typeof v==='string'){const n=Number(v);if(isFinite(n)&&n>0)return n;const d=Date.parse(v);if(isFinite(d))return d;}return 0;}
 function readSyncMeta(){try{const m=JSON.parse(localStorage.getItem(SYNC_META_KEY)||'{}');return parseSyncTime(m.updatedAt);}catch(e){return 0;}}
-function writeSyncMeta(ts){localUpdatedAt=Math.max(localUpdatedAt,parseSyncTime(ts));try{localStorage.setItem(SYNC_META_KEY,JSON.stringify({updatedAt:localUpdatedAt}));}catch(e){}}
+function writeSyncMeta(ts){const t=parseSyncTime(ts);if(t)localUpdatedAt=Math.max(localUpdatedAt,t);try{localStorage.setItem(SYNC_META_KEY,JSON.stringify({updatedAt:localUpdatedAt}));}catch(e){}}
 function markLocalChange(){writeSyncMeta(Math.max(Date.now(),localUpdatedAt+1));pendingOnlineSave=true;}
-function syncPayload(){return {items:items,updatedAt:localUpdatedAt||Date.now(),home:'Franklin-Andrea',v:2};}
+function syncPayload(){return {items:items,updatedAt:localUpdatedAt||Date.now(),home:'Franklin-Andrea',v:3};}
+function activeClients(){return syncClients.filter(x=>x.client&&x.client.connected);}
+function updateOnlineState(){const active=activeClients();syncOnline=active.length>0;syncClient=active.length?active[0].client:null;status();}
 function remoteSave(force=false){
  const state=JSON.stringify(items);
  if(!force&&state===lastSentItems&&!pendingOnlineSave)return;
  if(!syncReady){pendingOnlineSave=true;status();return;}
- if(!syncClient||!syncClient.connected){pendingOnlineSave=true;syncOnline=false;status();return;}
+ const active=activeClients();
+ if(!active.length){pendingOnlineSave=true;syncOnline=false;status();return;}
  if(!localUpdatedAt)writeSyncMeta(Date.now());
  pendingOnlineSave=true;
  const body=JSON.stringify(syncPayload());
- syncClient.publish(MQTT_TOPIC,body,{qos:1,retain:true},err=>{
-  syncOnline=!err;
-  if(!err){lastSentItems=state;pendingOnlineSave=false;syncReceived=true;}
-  status();
+ let remaining=active.length,ok=0;
+ active.forEach(entry=>{
+  try{
+   entry.client.publish(MQTT_TOPIC,body,{qos:1,retain:true},err=>{
+    if(!err)ok++;
+    remaining--;
+    if(remaining===0){
+     syncOnline=ok>0;
+     if(ok>0){lastSentItems=state;pendingOnlineSave=false;syncReceived=true;lastAppliedRemoteAt=Math.max(lastAppliedRemoteAt,localUpdatedAt);}
+     status();
+    }
+   });
+  }catch(e){remaining--;if(remaining===0)status();}
  });
 }
-function applyRemote(raw){
+function applyRemote(raw,source){
  try{
   const data=typeof raw==='string'?JSON.parse(raw):raw;
   const rawFresh=clean(Array.isArray(data)?data:data&&data.items);
   if(!rawFresh)return;
+  const remoteUpdatedAt=parseSyncTime(data&&data.updatedAt);
+  if(remoteUpdatedAt&&remoteUpdatedAt<Math.max(localUpdatedAt,lastAppliedRemoteAt))return;
   const fresh=purgeExpiredNotes(rawFresh);
   const removedExpired=fresh.length!==rawFresh.length;
-  const remoteUpdatedAt=parseSyncTime(data&&data.updatedAt);
-  syncReady=true;syncReceived=true;syncOnline=true;
   clearTimeout(initialSyncTimer);
-  if(pendingOnlineSave&&localUpdatedAt&&remoteUpdatedAt&&localUpdatedAt>remoteUpdatedAt){status();remoteSave(true);return;}
+  syncReady=true;syncReceived=true;syncOnline=true;
   items=fresh;
   const incoming=JSON.stringify(fresh);
   lastSentItems=incoming;
   pendingOnlineSave=false;
-  if(remoteUpdatedAt)writeSyncMeta(remoteUpdatedAt);
+  if(remoteUpdatedAt){lastAppliedRemoteAt=Math.max(lastAppliedRemoteAt,remoteUpdatedAt);writeSyncMeta(remoteUpdatedAt);}
   try{localStorage.setItem(key,incoming);}catch(e){}
   render();
   try{const fr=document.getElementById('approved-editor-frame');if(fr&&fr.contentWindow)fr.contentWindow.postMessage({type:'hogar-remote-state',items:(window.__HOGAR_GET_ITEMS__?window.__HOGAR_GET_ITEMS__():[])},'*');}catch(e){}
   status();
   if(removedExpired){markLocalChange();setTimeout(()=>remoteSave(true),0);}
+  else if(remoteUpdatedAt)setTimeout(()=>remoteSave(true),80);
  }catch(e){}
+}
+function connectBroker(def){
+ try{
+  const client=window.mqtt.connect(def.url,Object.assign({
+   clientId:'hogar_'+Math.random().toString(16).slice(2,10)+Date.now().toString(36),
+   clean:true,reconnectPeriod:2500,connectTimeout:10000,keepalive:30,protocolVersion:4
+  },def.options||{}));
+  const entry={name:def.name,client};
+  syncClients.push(entry);
+  client.on('connect',()=>{
+   updateOnlineState();
+   client.subscribe(MQTT_TOPIC,{qos:1},err=>{
+    if(err){updateOnlineState();return;}
+    clearTimeout(initialSyncTimer);
+    initialSyncTimer=setTimeout(()=>{
+     if(syncReceived)return;
+     syncReady=true;syncReceived=true;updateOnlineState();
+     if(!localUpdatedAt)writeSyncMeta(Date.now());
+     pendingOnlineSave=true;remoteSave(true);
+    },2600);
+   });
+  });
+  client.on('message',(topic,payload)=>{if(topic===MQTT_TOPIC)applyRemote(payload.toString(),def.name);});
+  client.on('offline',updateOnlineState);
+  client.on('close',updateOnlineState);
+  client.on('error',updateOnlineState);
+ }catch(e){updateOnlineState();}
 }
 function startMqtt(){
  if(syncStarted)return;
  syncStarted=true;
- const connect=()=>{
-  try{
-   syncClient=window.mqtt.connect(MQTT_URL,{
-    clientId:'hogar_'+Math.random().toString(16).slice(2,10)+Date.now().toString(36),
-    clean:true,reconnectPeriod:2000,connectTimeout:10000
-   });
-   syncClient.on('connect',()=>{
-    syncOnline=true;syncReady=false;syncReceived=false;status();
-    syncClient.subscribe(MQTT_TOPIC,{qos:1},err=>{
-     if(err){syncOnline=false;status();return;}
-     clearTimeout(initialSyncTimer);
-     initialSyncTimer=setTimeout(()=>{
-      if(syncReceived)return;
-      syncReady=true;syncReceived=true;syncOnline=true;
-      if(!localUpdatedAt)writeSyncMeta(Date.now());
-      pendingOnlineSave=true;
-      remoteSave(true);
-      status();
-     },2200);
-    });
-   });
-   syncClient.on('message',(topic,payload)=>{if(topic===MQTT_TOPIC)applyRemote(payload.toString());});
-   syncClient.on('offline',()=>{syncOnline=false;syncReady=false;status();});
-   syncClient.on('close',()=>{syncOnline=false;syncReady=false;status();});
-   syncClient.on('error',()=>{syncOnline=false;status();});
-  }catch(e){syncOnline=false;syncReady=false;status();}
- };
+ const connect=()=>{syncClients=[];MQTT_BROKERS.forEach(connectBroker);};
  if(window.mqtt){connect();return;}
  const s=document.createElement('script');
- s.src='https://cdn.jsdelivr.net/npm/mqtt@5.14.1/dist/mqtt.min.js';
+ s.src='https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js';
  s.onload=connect;
  s.onerror=()=>{syncOnline=false;syncReady=false;status();};
  document.head.append(s);
@@ -499,8 +517,8 @@ try{
  if(saved)items=saved; else items=[];
  if(rawSaved&&saved&&saved.length!==rawSaved.length)localStorage.setItem(key,JSON.stringify(saved));
 }catch(e){items=[];canSave=false;}
-localUpdatedAt=readSyncMeta();
-function status(){if(syncOnline&&syncReady&&syncReceived)$('[data-storage]').textContent='Nuestro hogar · online · todos sincronizados';else if(!canSave)$('[data-storage]').textContent='Vista de prueba · cambios solo en esta sesión';else $('[data-storage]').textContent=location.protocol==='file:'?'Nuestro hogar · listo para publicar':'Nuestro hogar · sincronizando todos los dispositivos…';}
+localUpdatedAt=readSyncMeta();lastAppliedRemoteAt=localUpdatedAt;
+function status(){if(syncOnline&&syncReady&&syncReceived)$('[data-storage]').textContent='Nuestro hogar · online · sincronización activa';else if(!canSave)$('[data-storage]').textContent='Vista de prueba · cambios solo en esta sesión';else $('[data-storage]').textContent=location.protocol==='file:'?'Nuestro hogar · listo para publicar':'Nuestro hogar · sincronizando todos los dispositivos…';}
 function tell(t){$('[data-notice]').textContent=t;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('[data-notice]').textContent='',3500);}
 function persist(){markLocalChange();try{localStorage.setItem(key,JSON.stringify(items));canSave=true;}catch(e){canSave=false;}status();render();remoteSave();}
 function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=fn;return b;}
@@ -567,7 +585,7 @@ function buildEditorQr(){
  box.title='Editar nuestro hogar';
 }
 function clock(){const d=new Date();$('[data-clock]').textContent=new Intl.DateTimeFormat('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);$('[data-date]').textContent=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'short'}).format(d);}clock();setInterval(clock,1000);setInterval(()=>{if(!$('[data-editor-view]').hidden||!$('[data-largeqr]').hidden||document.hidden)return;const notes=shown();if(notes.length>1){page=(page+1)%notes.length;renderNote();}},20000);render();status();startMqtt();buildEditorQr();enforceDailyReset(false);scheduleMidnightReset();
-const wakeCheck=()=>{enforceDailyReset(true);scheduleMidnightReset();if(!syncClient||!syncClient.connected){syncStarted=false;startMqtt();}};
+const wakeCheck=()=>{enforceDailyReset(true);scheduleMidnightReset();if(!activeClients().length){syncStarted=false;syncClients.forEach(x=>{try{x.client.end(true);}catch(e){}});syncClients=[];startMqtt();}else{syncReady=true;remoteSave(true);}};
 window.addEventListener('focus',wakeCheck);
 window.addEventListener('pageshow',wakeCheck);
 window.addEventListener('online',wakeCheck);
