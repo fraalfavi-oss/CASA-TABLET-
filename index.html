@@ -388,106 +388,87 @@ const pad=n=>String(n).padStart(2,'0');
 const localDate=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const defaults=[];
 const MQTT_URL='wss://broker.emqx.io:8084/mqtt';
-const MQTT_TOPIC='nuestro-hogar/7f2d8c4a9e1b6f305d7c2a8e4b1f9362/state';
-const MQTT_BROKERS=[
- {name:'EMQX',url:'wss://broker.emqx.io:8084/mqtt',options:{username:'emqx_test',password:'emqx_test'}},
- {name:'HiveMQ',url:'wss://broker.hivemq.com:8884/mqtt',options:{}}
-];
-const SYNC_META_KEY=key+'-sync-meta-v3';
-let syncClient=null,syncClients=[],syncOnline=false,syncReceived=false,syncStarted=false,syncReady=false,lastSentItems='',pendingOnlineSave=false,localUpdatedAt=0,initialSyncTimer=null,lastAppliedRemoteAt=0;
+const REMOTE_URL='https://mantledb.sh/v2/casa-tablet-fa-7f2d8c4a9e1b6f305d7c2a8e4b1f9362/shared-state';
+const PUSH_TOPIC='casa-tablet-fa-7f2d8c4a9e1b6f305d7c2a8e4b1f9362-sync';
+const PUSH_SSE='https://ntfy.sh/'+PUSH_TOPIC+'/sse?since=10s';
+const PUSH_TRIGGER='https://ntfy.sh/'+PUSH_TOPIC+'/trigger';
+const SYNC_META_KEY=key+'-sync-meta-v4';
+let syncOnline=false,syncReceived=false,syncStarted=false,syncReady=false,lastSentItems='',pendingOnlineSave=false,localUpdatedAt=0,lastAppliedRemoteAt=0,writeInFlight=false,writeQueued=false,writeTimer=null,eventSource=null,pollTimer=null;
 window.__HOGAR_GET_ITEMS__=()=>items.map(x=>({...x}));
 function parseSyncTime(v){if(typeof v==='number'&&isFinite(v))return v;if(typeof v==='string'){const n=Number(v);if(isFinite(n)&&n>0)return n;const d=Date.parse(v);if(isFinite(d))return d;}return 0;}
 function readSyncMeta(){try{const m=JSON.parse(localStorage.getItem(SYNC_META_KEY)||'{}');return parseSyncTime(m.updatedAt);}catch(e){return 0;}}
 function writeSyncMeta(ts){const t=parseSyncTime(ts);if(t)localUpdatedAt=Math.max(localUpdatedAt,t);try{localStorage.setItem(SYNC_META_KEY,JSON.stringify({updatedAt:localUpdatedAt}));}catch(e){}}
 function markLocalChange(){writeSyncMeta(Math.max(Date.now(),localUpdatedAt+1));pendingOnlineSave=true;}
-function syncPayload(){return {items:items,updatedAt:localUpdatedAt||Date.now(),home:'Franklin-Andrea',v:3};}
-function activeClients(){return syncClients.filter(x=>x.client&&x.client.connected);}
-function updateOnlineState(){const active=activeClients();syncOnline=active.length>0;syncClient=active.length?active[0].client:null;status();}
+function syncPayload(){return {home:'Franklin-Andrea',version:4,updatedAt:localUpdatedAt||Date.now(),items:items};}
+function applyRemoteData(data){
+ const rawFresh=clean(data&&data.items);
+ if(!rawFresh)return false;
+ const remoteUpdatedAt=parseSyncTime(data.updatedAt);
+ if(pendingOnlineSave&&localUpdatedAt&&remoteUpdatedAt&&localUpdatedAt>remoteUpdatedAt)return false;
+ if(remoteUpdatedAt&&remoteUpdatedAt<lastAppliedRemoteAt)return false;
+ const fresh=purgeExpiredNotes(rawFresh);
+ items=fresh;
+ const incoming=JSON.stringify(fresh);
+ lastSentItems=incoming;
+ pendingOnlineSave=false;
+ syncReady=true;syncReceived=true;syncOnline=true;
+ if(remoteUpdatedAt){lastAppliedRemoteAt=Math.max(lastAppliedRemoteAt,remoteUpdatedAt);writeSyncMeta(remoteUpdatedAt);}
+ try{localStorage.setItem(key,incoming);}catch(e){}
+ render();
+ try{const fr=document.getElementById('approved-editor-frame');if(fr&&fr.contentWindow)fr.contentWindow.postMessage({type:'hogar-remote-state',items:(window.__HOGAR_GET_ITEMS__?window.__HOGAR_GET_ITEMS__():[])},'*');}catch(e){}
+ status();
+ return true;
+}
+async function fetchRemote(initial=false){
+ try{
+  const r=await fetch(REMOTE_URL+'?t='+Date.now(),{method:'GET',cache:'no-store',headers:{'Accept':'application/json'}});
+  if(r.status===404){
+   syncOnline=true;syncReady=true;status();
+   if(initial){if(!localUpdatedAt)markLocalChange();remoteSave(true);}
+   return;
+  }
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const data=await r.json();
+  const remoteUpdatedAt=parseSyncTime(data&&data.updatedAt);
+  if(remoteUpdatedAt&&localUpdatedAt&&localUpdatedAt>remoteUpdatedAt&&pendingOnlineSave){syncOnline=true;syncReady=true;status();remoteSave(true);return;}
+  applyRemoteData(data);
+ }catch(e){syncOnline=false;status();}
+}
+async function writeRemote(force=false){
+ if(writeInFlight){writeQueued=true;return;}
+ writeInFlight=true;
+ try{
+  if(!localUpdatedAt)markLocalChange();
+  const state=JSON.stringify(items);
+  const r=await fetch(REMOTE_URL,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(syncPayload())});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  syncOnline=true;syncReady=true;syncReceived=true;pendingOnlineSave=false;lastSentItems=state;lastAppliedRemoteAt=Math.max(lastAppliedRemoteAt,localUpdatedAt);status();
+  try{fetch(PUSH_TRIGGER+'?t='+Date.now(),{method:'GET',cache:'no-store',mode:'no-cors'}).catch(()=>{});}catch(e){}
+ }catch(e){syncOnline=false;pendingOnlineSave=true;status();}
+ finally{
+  writeInFlight=false;
+  if(writeQueued){writeQueued=false;setTimeout(()=>writeRemote(true),80);}
+ }
+}
 function remoteSave(force=false){
  const state=JSON.stringify(items);
  if(!force&&state===lastSentItems&&!pendingOnlineSave)return;
- if(!syncReady){pendingOnlineSave=true;status();return;}
- const active=activeClients();
- if(!active.length){pendingOnlineSave=true;syncOnline=false;status();return;}
- if(!localUpdatedAt)writeSyncMeta(Date.now());
  pendingOnlineSave=true;
- const body=JSON.stringify(syncPayload());
- let remaining=active.length,ok=0;
- active.forEach(entry=>{
-  try{
-   entry.client.publish(MQTT_TOPIC,body,{qos:1,retain:true},err=>{
-    if(!err)ok++;
-    remaining--;
-    if(remaining===0){
-     syncOnline=ok>0;
-     if(ok>0){lastSentItems=state;pendingOnlineSave=false;syncReceived=true;lastAppliedRemoteAt=Math.max(lastAppliedRemoteAt,localUpdatedAt);}
-     status();
-    }
-   });
-  }catch(e){remaining--;if(remaining===0)status();}
- });
+ clearTimeout(writeTimer);
+ writeTimer=setTimeout(()=>writeRemote(force),force?0:120);
+ status();
 }
-function applyRemote(raw,source){
- try{
-  const data=typeof raw==='string'?JSON.parse(raw):raw;
-  const rawFresh=clean(Array.isArray(data)?data:data&&data.items);
-  if(!rawFresh)return;
-  const remoteUpdatedAt=parseSyncTime(data&&data.updatedAt);
-  if(remoteUpdatedAt&&remoteUpdatedAt<Math.max(localUpdatedAt,lastAppliedRemoteAt))return;
-  const fresh=purgeExpiredNotes(rawFresh);
-  const removedExpired=fresh.length!==rawFresh.length;
-  clearTimeout(initialSyncTimer);
-  syncReady=true;syncReceived=true;syncOnline=true;
-  items=fresh;
-  const incoming=JSON.stringify(fresh);
-  lastSentItems=incoming;
-  pendingOnlineSave=false;
-  if(remoteUpdatedAt){lastAppliedRemoteAt=Math.max(lastAppliedRemoteAt,remoteUpdatedAt);writeSyncMeta(remoteUpdatedAt);}
-  try{localStorage.setItem(key,incoming);}catch(e){}
-  render();
-  try{const fr=document.getElementById('approved-editor-frame');if(fr&&fr.contentWindow)fr.contentWindow.postMessage({type:'hogar-remote-state',items:(window.__HOGAR_GET_ITEMS__?window.__HOGAR_GET_ITEMS__():[])},'*');}catch(e){}
-  status();
-  if(removedExpired){markLocalChange();setTimeout(()=>remoteSave(true),0);}
-  else if(remoteUpdatedAt)setTimeout(()=>remoteSave(true),80);
- }catch(e){}
-}
-function connectBroker(def){
- try{
-  const client=window.mqtt.connect(def.url,Object.assign({
-   clientId:'hogar_'+Math.random().toString(16).slice(2,10)+Date.now().toString(36),
-   clean:true,reconnectPeriod:2500,connectTimeout:10000,keepalive:30,protocolVersion:4
-  },def.options||{}));
-  const entry={name:def.name,client};
-  syncClients.push(entry);
-  client.on('connect',()=>{
-   updateOnlineState();
-   client.subscribe(MQTT_TOPIC,{qos:1},err=>{
-    if(err){updateOnlineState();return;}
-    clearTimeout(initialSyncTimer);
-    initialSyncTimer=setTimeout(()=>{
-     if(syncReceived)return;
-     syncReady=true;syncReceived=true;updateOnlineState();
-     if(!localUpdatedAt)writeSyncMeta(Date.now());
-     pendingOnlineSave=true;remoteSave(true);
-    },2600);
-   });
-  });
-  client.on('message',(topic,payload)=>{if(topic===MQTT_TOPIC)applyRemote(payload.toString(),def.name);});
-  client.on('offline',updateOnlineState);
-  client.on('close',updateOnlineState);
-  client.on('error',updateOnlineState);
- }catch(e){updateOnlineState();}
-}
-function startMqtt(){
+function startRemoteSync(){
  if(syncStarted)return;
  syncStarted=true;
- const connect=()=>{syncClients=[];MQTT_BROKERS.forEach(connectBroker);};
- if(window.mqtt){connect();return;}
- const s=document.createElement('script');
- s.src='https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js';
- s.onload=connect;
- s.onerror=()=>{syncOnline=false;syncReady=false;status();};
- document.head.append(s);
+ fetchRemote(true);
+ try{
+  eventSource=new EventSource(PUSH_SSE);
+  eventSource.onopen=()=>{syncOnline=true;status();};
+  eventSource.onmessage=()=>{fetchRemote(false);};
+  eventSource.onerror=()=>{status();};
+ }catch(e){}
+ pollTimer=setInterval(()=>{if(!document.hidden)fetchRemote(false);},45000);
 }
 function clean(data){return Array.isArray(data)?data.filter(x=>x&&typeof x.id==='string'&&typeof x.text==='string'&&['note','task','event'].includes(x.kind)&&['Franklin','Andrea'].includes(x.author)).map(x=>({...x,done:x.kind==='task'&&!!x.done,eventDate:x.kind==='event'&&typeof x.eventDate==='string'?x.eventDate:'',eventTime:x.kind==='event'&&typeof x.eventTime==='string'?x.eventTime:''})):null;}
 function noteDay(n){if(n&&n.day)return n.day;if(n&&n.time){const d=new Date(n.time);if(!isNaN(d))return localDate(d)}return '';}
@@ -518,7 +499,7 @@ try{
  if(rawSaved&&saved&&saved.length!==rawSaved.length)localStorage.setItem(key,JSON.stringify(saved));
 }catch(e){items=[];canSave=false;}
 localUpdatedAt=readSyncMeta();lastAppliedRemoteAt=localUpdatedAt;
-function status(){if(syncOnline&&syncReady&&syncReceived)$('[data-storage]').textContent='Nuestro hogar · online · sincronización activa';else if(!canSave)$('[data-storage]').textContent='Vista de prueba · cambios solo en esta sesión';else $('[data-storage]').textContent=location.protocol==='file:'?'Nuestro hogar · listo para publicar':'Nuestro hogar · sincronizando todos los dispositivos…';}
+function status(){if(syncOnline&&syncReady&&syncReceived)$('[data-storage]').textContent='Nuestro hogar · online · sincronizado entre dispositivos';else if(!canSave)$('[data-storage]').textContent='Vista de prueba · cambios solo en esta sesión';else $('[data-storage]').textContent=location.protocol==='file:'?'Nuestro hogar · listo para publicar':'Nuestro hogar · conectando almacenamiento compartido…';}
 function tell(t){$('[data-notice]').textContent=t;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('[data-notice]').textContent='',3500);}
 function persist(){markLocalChange();try{localStorage.setItem(key,JSON.stringify(items));canSave=true;}catch(e){canSave=false;}status();render();remoteSave();}
 function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=fn;return b;}
@@ -573,19 +554,19 @@ function buildEditorQr(){
  const box=document.querySelector('[data-editor-qr-box]');
  if(!box)return;
  box.innerHTML='';
- const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=20261006-0730-sync2';
+ const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=sync4-http-20261006';
  const img=document.createElement('img');
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
  img.style.cssText='display:block;width:90px;height:90px;background:#fff;border-radius:4px';
- img.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ4AAAEOAQAAAABQysQIAAACRUlEQVR4nO2aQW4iUQxE349byvJzA47yuVmu5hyFA0RyliMZ1Sz8gcxilEhETL6GFgvoroVL1a6yu2nik+P09BkCHpAH5P+GIFUnDbqyezKSQZcFgEn5k8r9IsQkBTo2C0xuQb4fkjHJ/rRyvwJ5bxu0Ha29nHacdvNaa4f713IzZLt8yw1LtreWsMH2dvdavh3SPd/br71boCD/aS23QroSno8vba+NsZVGIPn9a/kWyKm1tgOw48GOh/Ol19ba3Wu5HYLOR1m3AsVQjOv5n1TuFxlZDAXZld0V1E/JFWPBPEJSdkkuOV0KgASLkUsmLJISakKQ/OJyCiQtysjk2d3k1w4KLEb2pftoKEZ2p8vkFsOC7MtqNLl4UajpDpZmhEXZuFuQoMCqvxZlNPNIFsPk8xPQfdk+mhlEFzNkuYTskozk9Gl09uHGy+6r3nU1M5z32XIJGOvODDDobmeBplgBy+bRWSCvxwsmLw/PJZ3hCdjgWd52WHDaewK8wrAY271ruR0yYwhIRgk0F72+cB5Jnl1l2tndApsGuGofZfcEumcvatMZ1p29FYMixSiNaqFYd66reK0tqdZYaRJclFH5Nl15TtWp2roaMZejStVyBlg5YaXidTXwGGV3izICoMzNa0ZVDJuklmRUjSP5eT1HNQgtq1HtR0kt46OeewMLazQ3vpFdH5YjWYwFNbpC2g7eD6e9P8s32HilXsb8zHL/flz6KLtX+1RDVUItqNEfXpe1+snr5JpzXXv8Q+MBeUBuhvwGli6MHYi28T8AAAAASUVORK5CYII=';
+ img.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcIAAAHCAQAAAABUY/ToAAADh0lEQVR4nO2cW6rjOhBFV7UN+bThDCBDkWfW9JDODOyhZAb25wGF6g89/Di590LfDnmw68OxEi1kQ1HapZJizp/Z9OMPQRApUqRIkSJFinw+0rK1mPXA1F/NrKc2wYal9Boe/LQin4vE3d0J7u4+N06YmyyzwwypWX/ddB5f6z1F3o8sPjTD6j4+du7uHvGRxnMz/drIh0T+O+ljFyFcWoDGbeji3ccU+V6kDUsLkPWQjwAsLTbcbUyRr022+bNzYAFn6QGayDS00cJ8bT3MH3j69bFPK/KJycksJ2IDjdsA2M8ZYDnl5sA1pWV/a0yRb0ImTb21GaCK6ODuubk3aWqRO9JqkDE7R9wvZkz91YCrlWZZJBoe/LQin4vMuT1dJMWcFHhSCh+BLqZcbe2nOCRyb+sMtk5j2aXmxnOqP5ObdX6TD4mstiqcHIeqq2RRRPKhtNA4AvIhkTdIG5YWH5cWH7ka0/krSSEbujy12c+LWY5SD35akc9FFnXTrZdYqmRznt/yQmO3y9AUh0QWKz4Uix5iVUYRoEmVsxKCpIdEHq1o6lKUp0akqrPdPebLCNJDIg+2XVkECB5JLjWS3aekabD6mnxIZLWjHsqJWPWhcpdXipAPiTzamtav+jnPasC6xkhSRlofEnmb9JFrKnOklGwys+xXl9N22Xo6xz35iKcV+Vzkfp26VjgoOxrdi18lU24v8psVn4hVTlN2wNYuI3XOk6YW+c2KHjoonlpahVrrKMpIekjk1tr1drtJcemx8NlDcICliWlD7AZ4rfcUeT9yW3MF2O348E0ilteHXGeDRB5tO5ft9gr5SFMPDYHqZSL/ybYVjqSkc4EsX25UXxWHRO6s5Ft5h1D6buxKbNokYqm/8jKRB6sSuYkWLm30aWiigeFTP7vRfRl0M3YkX+s9Rd6PPJ7r+L4NdntCenP8XnFIZLYUh0qQaSJhvOIsV3OWttwBsHzEsqfoUU8r8onJUAoeyaZz1kM2dJF8MjG5z1VnFEXeJuu5sclOnpvLyWE5Zeea1iOuf2lMke9BtscvwmefRDTwlXfnh08Amgg0bv93TJHvTfqvs7v7pYWpb5xwafFffa6X2XCPMUW+Nnn83w9YDML4Zc7SRmdpooX5IxIubWRap7PXek+R9yN3exZLcSOVOfL56bjponqZyO9m/t99bpr+41ykSJEiRYoU+Sbkb3ojhSbqtvmEAAAAAElFTkSuQmCC';
  img.onerror=()=>{box.innerHTML='';const a=document.createElement('a');a.href=target;a.textContent='Abrir editor';a.style.cssText='font-size:10px;color:#9b513a;text-align:center';box.append(a);};
  box.style.padding='3px';
  box.append(img);
  box.title='Editar nuestro hogar';
 }
-function clock(){const d=new Date();$('[data-clock]').textContent=new Intl.DateTimeFormat('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);$('[data-date]').textContent=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'short'}).format(d);}clock();setInterval(clock,1000);setInterval(()=>{if(!$('[data-editor-view]').hidden||!$('[data-largeqr]').hidden||document.hidden)return;const notes=shown();if(notes.length>1){page=(page+1)%notes.length;renderNote();}},20000);render();status();startMqtt();buildEditorQr();enforceDailyReset(false);scheduleMidnightReset();
-const wakeCheck=()=>{enforceDailyReset(true);scheduleMidnightReset();if(!activeClients().length){syncStarted=false;syncClients.forEach(x=>{try{x.client.end(true);}catch(e){}});syncClients=[];startMqtt();}else{syncReady=true;remoteSave(true);}};
+function clock(){const d=new Date();$('[data-clock]').textContent=new Intl.DateTimeFormat('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);$('[data-date]').textContent=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'short'}).format(d);}clock();setInterval(clock,1000);setInterval(()=>{if(!$('[data-editor-view]').hidden||!$('[data-largeqr]').hidden||document.hidden)return;const notes=shown();if(notes.length>1){page=(page+1)%notes.length;renderNote();}},20000);render();status();startRemoteSync();buildEditorQr();enforceDailyReset(false);scheduleMidnightReset();
+const wakeCheck=()=>{enforceDailyReset(true);scheduleMidnightReset();fetchRemote(false);if(pendingOnlineSave)remoteSave(true);};
 window.addEventListener('focus',wakeCheck);
 window.addEventListener('pageshow',wakeCheck);
 window.addEventListener('online',wakeCheck);
