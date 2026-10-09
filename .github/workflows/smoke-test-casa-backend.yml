@@ -15,9 +15,15 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://casa-tablet-backend.fixed-mirror.workers.dev/api/franklin-andrea-home"
-          echo "HEALTH"
-          curl -fsS "$BASE/health" | tee /tmp/health.json
+          echo "HEALTH HEADERS/BODY"
+          curl -sS -i "$BASE/health" | tee /tmp/health-full.txt
           echo
+          CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' "$BASE/health")"
+          echo "HTTP_CODE=$CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "Backend health check did not return 200"
+            exit 22
+          fi
           echo "STATE 1"
           curl -fsS "$BASE/state" | tee /tmp/state1.json
           REV="$(python3 -c 'import json; print(json.load(open("/tmp/state1.json"))["rev"])')"
