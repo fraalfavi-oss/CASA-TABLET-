@@ -335,7 +335,7 @@
 </style>
 <section id="approved-editor-overlay" aria-label="Editor de Nuestro Hogar">
   <button id="approved-editor-close" type="button">← Volver al hogar</button>
-  <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="editor.html?v=13"></iframe>
+  <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="about:blank" data-src="editor.html?v=14"></iframe>
 </section>
 <style>
 /* Tablón multimensaje: varias notas visibles simultáneamente */
@@ -369,7 +369,7 @@
 #hogar7 .historyempty{padding:14px 0}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
-<script src="sync.js?v=13"></script>
+<script src="sync.js?v=14"></script>
 <script>
 (()=>{'use strict';
 const root=document.getElementById('hogar7'),$=s=>root.querySelector(s),key='franklin-andrea-panel-v11-clean';
@@ -401,11 +401,7 @@ function remoteSave(force=false){
  if(!force&&current===lastSentItems&&!pendingOnlineSave)return;
  pendingOnlineSave=true;status();
  const snapshot=items.map(toRemote);
- HogarSync.mutate(db=>{
-  const next={};
-  snapshot.forEach(x=>{next[x.id]=x;});
-  db.items=next;
- }).then(()=>{
+ HogarSync.save(snapshot).then(()=>{
   lastSentItems=JSON.stringify(items);
   pendingOnlineSave=false;syncOnline=true;syncReceived=true;status();
  }).catch(()=>{
@@ -681,7 +677,7 @@ function buildEditorQr(){
  const box=document.querySelector('[data-editor-qr-box]');
  if(!box)return;
  box.innerHTML='';
- const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=13';
+ const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=14';
  const img=document.createElement('img');
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
@@ -697,8 +693,7 @@ const wakeCheck=()=>{enforceDailyReset(true);scheduleMidnightReset();HogarSync.r
 window.addEventListener('focus',wakeCheck);
 window.addEventListener('pageshow',wakeCheck);
 window.addEventListener('online',wakeCheck);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)wakeCheck();});if(location.hash==='#editar'||location.hash==='#e')view('editor');if(location.hash==='#agenda'){view('editor');reset();setKind('event');renderEditor();}window.addEventListener('storage',e=>{if(e.key===key){try{const fresh=clean(JSON.parse(e.newValue));if(fresh){items=purgeExpiredNotes(fresh);try{localStorage.setItem(key,JSON.stringify(items));}catch(_){}render();remoteSave(true);}}catch(error){}}});
-window.addEventListener('message',e=>{if(e.data&&e.data.type==='hogar-data-changed'){try{const fresh=clean(e.data.items);if(fresh){items=purgeExpiredNotes(fresh);try{localStorage.setItem(key,JSON.stringify(items));}catch(_){}render();pendingOnlineSave=true;remoteSave(true);}}catch(error){}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)wakeCheck();});if(location.hash==='#editar'||location.hash==='#e')view('editor');if(location.hash==='#agenda'){view('editor');reset();setKind('event');renderEditor();}
 })();
 </script>
 </div>
@@ -709,6 +704,9 @@ window.addEventListener('message',e=>{if(e.data&&e.data.type==='hogar-data-chang
   const close=document.getElementById('approved-editor-close');
   if(!overlay) return;
   function openEditor(){
+    if(frame&&(!frame.getAttribute('src')||frame.getAttribute('src')==='about:blank')){
+      frame.setAttribute('src',frame.dataset.src||'editor.html?v=14');
+    }
     overlay.classList.add('open');
     document.documentElement.style.overflow='hidden';
     setTimeout(()=>{try{if(frame&&frame.contentWindow)frame.contentWindow.focus();}catch(e){}},120);
