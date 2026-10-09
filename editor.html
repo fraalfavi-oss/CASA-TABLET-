@@ -328,16 +328,6 @@
 <p class="notice" role="status" data-notice></p>
 
 <style>
-#approved-editor-overlay{position:fixed;inset:0;background:#f8eedb;z-index:99999;display:none}
-#approved-editor-overlay.open{display:block}
-#approved-editor-overlay iframe{width:100%;height:100%;border:0;display:block;background:#f8eedb}
-#approved-editor-close{position:fixed;right:14px;top:14px;z-index:100000;border:1px solid #d8c5ad;background:#fffdf8;color:#7b4a36;border-radius:999px;padding:10px 14px;font:600 14px system-ui;box-shadow:0 4px 18px #54301820;cursor:pointer}
-</style>
-<section id="approved-editor-overlay" aria-label="Editor de Nuestro Hogar">
-  <button id="approved-editor-close" type="button">← Volver al hogar</button>
-  <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="editor.html?v=13"></iframe>
-</section>
-<style>
 /* Tablón multimensaje: varias notas visibles simultáneamente */
 #hogar7 .items{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
 #hogar7 .items .note{width:100%;min-width:0;min-height:138px}
@@ -370,7 +360,7 @@
 #hogar7 .historyempty{padding:14px 0}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
-<script src="sync.js?v=13"></script>
+<script src="sync.js?v=14"></script>
 <script>
 (()=>{'use strict';
 const root=document.getElementById('hogar7'),$=s=>root.querySelector(s),key='franklin-andrea-panel-v11-clean';
@@ -402,11 +392,7 @@ function remoteSave(force=false){
  if(!force&&current===lastSentItems&&!pendingOnlineSave)return;
  pendingOnlineSave=true;status();
  const snapshot=items.map(toRemote);
- HogarSync.mutate(db=>{
-  const next={};
-  snapshot.forEach(x=>{next[x.id]=x;});
-  db.items=next;
- }).then(()=>{
+ HogarSync.save(snapshot).then(()=>{
   lastSentItems=JSON.stringify(items);
   pendingOnlineSave=false;syncOnline=true;syncReceived=true;status();
  }).catch(()=>{
@@ -682,7 +668,7 @@ function buildEditorQr(){
  const box=document.querySelector('[data-editor-qr-box]');
  if(!box)return;
  box.innerHTML='';
- const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=13';
+ const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=14';
  const img=document.createElement('img');
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
@@ -698,12 +684,9 @@ const wakeCheck=()=>{enforceDailyReset(true);scheduleMidnightReset();HogarSync.r
 window.addEventListener('focus',wakeCheck);
 window.addEventListener('pageshow',wakeCheck);
 window.addEventListener('online',wakeCheck);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)wakeCheck();});if(location.hash==='#editar'||location.hash==='#e')view('editor');if(location.hash==='#agenda'){view('editor');reset();setKind('event');renderEditor();}window.addEventListener('storage',e=>{if(e.key===key){try{const fresh=clean(JSON.parse(e.newValue));if(fresh){items=purgeExpiredNotes(fresh);try{localStorage.setItem(key,JSON.stringify(items));}catch(_){}render();remoteSave(true);}}catch(error){}}});
-window.addEventListener('message',e=>{if(e.data&&e.data.type==='hogar-data-changed'){try{const fresh=clean(e.data.items);if(fresh){items=purgeExpiredNotes(fresh);try{localStorage.setItem(key,JSON.stringify(items));}catch(_){}render();pendingOnlineSave=true;remoteSave(true);}}catch(error){}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)wakeCheck();});if(location.hash==='#editar'||location.hash==='#e')view('editor');if(location.hash==='#agenda'){view('editor');reset();setKind('event');renderEditor();}
 })();
 </script>
 </div>
-<script>
-(()=>{const overlay=document.getElementById('approved-editor-overlay');if(overlay)overlay.remove();})();
-</script>
+
 </body></html>
