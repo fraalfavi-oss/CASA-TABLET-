@@ -149,22 +149,11 @@ async function mutate(mutator){
   try{
     const latest=await fetchRows();
     const before=maps(latest);
-    const draft={version:10,items:latest.map(x=>({...x}))};
-    await mutator({
-      get items(){return maps(draft.items)},
-      set items(v){draft.items=Object.values(v||{})}
-    });
+    const db={items:maps(latest)};
+    await mutator(db);
 
-    // Compatibility with the existing UI callbacks, which expect db.items[id].
-    // Re-run mutator against a plain object if no change was made via the proxy.
-    if(same(latest,draft.items)){
-      const db={items:maps(latest)};
-      await mutator(db);
-      draft.items=Object.values(db.items||{});
-    }
-
-    draft.items=cleanItems(draft.items);
-    const after=maps(draft.items);
+    const nextItems=cleanItems(Object.values(db.items||{}));
+    const after=maps(nextItems);
 
     const deleted=Object.keys(before).filter(id=>!after[id]);
     const changed=Object.values(after).filter(x=>!before[x.id]||!same(before[x.id],x));
