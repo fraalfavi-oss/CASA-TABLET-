@@ -1,0 +1,52 @@
+name: Deploy Casa backend temporary
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-casa-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Deploy temporary Cloudflare Worker
+        id: deploy
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="$(npx -y wrangler@latest deploy --temporary 2>&1)"
+          CLAIM="$(printf '%s\n' "$OUTPUT" | sed -n 's/^[[:space:]]*Claim URL:[[:space:]]*//p' | head -n1)"
+          WORKER="$(printf '%s\n' "$OUTPUT" | grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' | tail -n1)"
+          if [ -z "$WORKER" ]; then
+            printf '%s\n' "$OUTPUT"
+            exit 1
+          fi
+          if [ -n "$CLAIM" ]; then
+            echo "::add-mask::$CLAIM"
+          fi
+          printf '%s' "$WORKER" > worker-url.txt
+          printf '%s' "$CLAIM" > claim-url.txt
+          echo "Backend deployed successfully"
+
+      - name: Upload deployment info
+        uses: actions/upload-artifact@v4
+        with:
+          name: casa-backend-deployment
+          path: |
+            backend/worker-url.txt
+            backend/claim-url.txt
+          if-no-files-found: error
