@@ -1,0 +1,35 @@
+name: Smoke test Casa backend
+
+on:
+  push:
+    paths:
+      - ".github/workflows/smoke-test-casa-backend.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test backend read and write
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://casa-tablet-backend.fixed-mirror.workers.dev/api/franklin-andrea-home"
+          echo "HEALTH"
+          curl -fsS "$BASE/health" | tee /tmp/health.json
+          echo
+          echo "STATE 1"
+          curl -fsS "$BASE/state" | tee /tmp/state1.json
+          REV="$(python3 -c 'import json; print(json.load(open("/tmp/state1.json"))["rev"])')"
+          echo
+          echo "WRITE"
+          curl -fsS -X POST "$BASE/replace"             -H "Content-Type: application/json"             --data '{"expectedRev":'"$REV"',"items":{"smoke":{"id":"smoke","kind":"task","author":"Franklin","text":"SMOKE TEST","done":false,"createdAt":1,"updatedAt":1}}}'             | tee /tmp/write.json
+          echo
+          echo "STATE 2"
+          curl -fsS "$BASE/state" | tee /tmp/state2.json
+          python3 - <<'PY'
+          import json
+          s=json.load(open("/tmp/state2.json"))
+          assert s["items"]["smoke"]["text"]=="SMOKE TEST"
+          print("BACKEND_READ_WRITE_OK")
+          PY
