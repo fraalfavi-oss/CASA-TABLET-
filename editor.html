@@ -333,6 +333,18 @@
   <button id="approved-editor-close" type="button">← Volver al hogar</button>
   <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="editor.html?v=11"></iframe>
 </section>
+<style>
+/* Tablón multimensaje: varias notas visibles simultáneamente */
+#hogar7 .items{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
+#hogar7 .items .note{width:100%;min-width:0;min-height:138px}
+@media(max-width:1000px){
+ #hogar7 .items{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:650px){
+ #hogar7 .items{grid-template-columns:1fr}
+ #hogar7 .items .note{min-height:112px}
+}
+</style>
 <script>if(location.hash!=='#editar'&&location.hash!=='#e'){history.replaceState(null,'',location.pathname+location.search+'#editar');}</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="sync.js?v=11"></script>
@@ -440,7 +452,31 @@ function tell(t){$('[data-notice]').textContent=t;clearTimeout(noticeTimer);noti
 function persist(){try{localStorage.setItem(key,JSON.stringify(items));canSave=true;}catch(e){canSave=false;}status();render();remoteSave();}
 function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=fn;return b;}
 function shown(){const today=localDate(new Date());return items.filter(x=>x.kind==='note'&&noteDay(x)===today);}
-function renderNote(){const list=shown();page=list.length?page%list.length:0;const box=$('[data-items]');box.replaceChildren();$('[data-note-counter]').textContent=list.length>1?`${page+1} de ${list.length}`:'';const n=list[page];if(n){const a=document.createElement('article');a.className='note';const meta=document.createElement('div');meta.className='meta';meta.textContent=n.author+' · Para nosotros';const p=document.createElement('p');p.textContent=n.text;a.append(meta,p);box.append(a);}else{const empty=document.createElement('p');empty.className='empty';empty.textContent='Aquí aparecerá vuestro próximo mensaje.';box.append(empty);}}
+function renderNote(){
+ const list=shown();
+ page=0;
+ const box=$('[data-items]');
+ box.replaceChildren();
+ $('[data-note-counter]').textContent=list.length===1?'1 mensaje':list.length?list.length+' mensajes':'';
+ if(list.length){
+   list.forEach(n=>{
+     const a=document.createElement('article');
+     a.className='note';
+     const meta=document.createElement('div');
+     meta.className='meta';
+     meta.textContent=n.author+' · Para nosotros';
+     const p=document.createElement('p');
+     p.textContent=n.text;
+     a.append(meta,p);
+     box.append(a);
+   });
+ }else{
+   const empty=document.createElement('p');
+   empty.className='empty';
+   empty.textContent='Aquí aparecerá vuestro próximo mensaje.';
+   box.append(empty);
+ }
+}
 function renderPending(){const tasks=items.filter(x=>x.kind==='task').sort((a,b)=>Number(a.done)-Number(b.done));const box=$('[data-pending]');box.replaceChildren();const open=tasks.filter(x=>!x.done);$('[data-pending-count]').textContent=open.length+' por hacer';tasks.slice(0,4).forEach(n=>{const row=document.createElement('label');row.className='pendingrow'+(n.done?' completed':'');const check=document.createElement('input');check.type='checkbox';check.checked=n.done;const text=document.createElement('span');text.textContent=n.text;check.onchange=()=>{n.done=check.checked;persist();};row.append(check,text);box.append(row);});if(!tasks.length){const p=document.createElement('p');p.className='pendingempty';p.textContent='Nada pendiente por ahora. ♡';box.append(p);}else if(tasks.length>4){const p=document.createElement('p');p.className='morehint';p.textContent=`+ ${tasks.length-4} más en el editor`;box.append(p);}}
 function eventSort(a,b){return (a.eventDate+(a.eventTime||'99:99')).localeCompare(b.eventDate+(b.eventTime||'99:99'));}
 function renderAgenda(){
