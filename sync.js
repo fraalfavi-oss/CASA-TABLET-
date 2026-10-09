@@ -177,6 +177,28 @@ async function mutate(mutator){
   }
 }
 
+async function saveItems(list){
+  writing=true;
+  emitStatus();
+  try{
+    const itemsToSave=cleanItems(Array.isArray(list)?list:[]);
+    if(!itemsToSave.length){
+      await refresh(true);
+      return getState();
+    }
+    const rows=itemsToSave.map(itemToRow);
+    const {error}=await getClient()
+      .from(TABLE)
+      .upsert(rows,{onConflict:'id'});
+    if(error)throw new Error('Supabase guardar: '+error.message);
+    await refresh(true);
+    return getState();
+  }finally{
+    writing=false;
+    emitStatus();
+  }
+}
+
 async function removeItem(id){
   writing=true;
   emitStatus();
@@ -241,12 +263,13 @@ async function init(){
 function subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)}
 function subscribeStatus(fn){statusListeners.add(fn);fn({database:true,realtime,writing,initialized,lastSync,dbUrl:SUPABASE_URL});return()=>statusListeners.delete(fn)}
 function makeId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
-function editorUrl(){const u=new URL('editor.html',location.href);u.search='';u.hash='';u.searchParams.set('v','13');return u.toString()}
+function editorUrl(){const u=new URL('editor.html',location.href);u.search='';u.hash='';u.searchParams.set('v','14');return u.toString()}
 
 window.HogarSync={
   init,
   refresh,
   mutate,
+  save:saveItems,
   remove:removeItem,
   subscribe,
   subscribeStatus,
