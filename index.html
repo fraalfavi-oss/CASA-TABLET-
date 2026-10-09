@@ -724,7 +724,6 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)wakeCheck(
   close.onclick=closeEditor;
   window.addEventListener('hashchange',()=>{ if(location.hash==='#e'||location.hash==='#editar') openEditor(); });
   if(location.hash==='#e'||location.hash==='#editar') openEditor();
-  window.addEventListener('storage',()=>{ try{ if(frame && frame.contentWindow){} }catch(e){} });
 })();
 </script>
 </body></html>
