@@ -9,6 +9,8 @@
   let listeners=new Set();
   let statusListeners=new Set();
   let eventSource=null;
+  let fallbackTimer=null;
+  let lastNtfyId='';
   let writing=false;
   let realtime=false;
   let initialized=false;
@@ -124,20 +126,51 @@
     }finally{writing=false;emitStatus();}
   }
 
-  function startRealtime(){
-    if(!dbUrl||eventSource)return;
+  function handleNtfyObject(msg){
+    if(!msg||msg.event!=='message'||!msg.id)return false;
+    if(msg.id===lastNtfyId)return false;
+    lastNtfyId=msg.id;
+    return true;
+  }
+
+  async function pollNtfy(){
+    if(!dbUrl)return;
     const topic=topicForDb(dbUrl);
     try{
-      eventSource=new EventSource(`${NTFY_BASE}/${topic}/sse?since=10s`);
-      eventSource.onopen=()=>{realtime=true;emitStatus();};
-      eventSource.onerror=()=>{realtime=false;emitStatus();};
-      eventSource.onmessage=()=>{refresh(false).catch(()=>{});};
-    }catch(e){realtime=false;emitStatus();}
-    window.addEventListener('focus',()=>refresh(false).catch(()=>{}));
-    window.addEventListener('pageshow',()=>refresh(false).catch(()=>{}));
-    window.addEventListener('online',()=>refresh(false).catch(()=>{}));
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(false).catch(()=>{});});
-    setInterval(()=>{if(!document.hidden)refresh(false).catch(()=>{});},60*60*1000);
+      const since=lastNtfyId||'10s';
+      const r=await fetch(`${NTFY_BASE}/${topic}/json?poll=1&since=${encodeURIComponent(since)}&_=${Date.now()}`,{method:'GET',cache:'no-store'});
+      if(!r.ok)throw new Error('ntfy '+r.status);
+      const raw=await r.text();
+      let changed=false;
+      for(const line of raw.split(/\r?\n/)){
+        if(!line.trim())continue;
+        try{if(handleNtfyObject(JSON.parse(line)))changed=true;}catch(e){}
+      }
+      realtime=true;emitStatus();
+      if(changed)await refresh(false);
+    }catch(e){
+      if(!eventSource||eventSource.readyState!==1){realtime=false;emitStatus();}
+    }
+  }
+
+  function startRealtime(){
+    if(!dbUrl)return;
+    const topic=topicForDb(dbUrl);
+    if(!eventSource){
+      try{
+        eventSource=new EventSource(`${NTFY_BASE}/${topic}/sse?since=10s`);
+        eventSource.onopen=()=>{realtime=true;emitStatus();};
+        eventSource.onerror=()=>{emitStatus();};
+        eventSource.onmessage=e=>{
+          try{const msg=JSON.parse(e.data);if(handleNtfyObject(msg))refresh(false).catch(()=>{});}catch(_){refresh(false).catch(()=>{});}
+        };
+      }catch(e){}
+    }
+    if(!fallbackTimer){fallbackTimer=setInterval(pollNtfy,1000);setTimeout(pollNtfy,250);}
+    window.addEventListener('focus',()=>{refresh(false).catch(()=>{});pollNtfy();});
+    window.addEventListener('pageshow',()=>{refresh(false).catch(()=>{});pollNtfy();});
+    window.addEventListener('online',()=>{refresh(false).catch(()=>{});pollNtfy();});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refresh(false).catch(()=>{});pollNtfy();}});
   }
 
   async function init({seedItems=[],allowCreate=true}={}){
