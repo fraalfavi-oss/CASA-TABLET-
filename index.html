@@ -319,6 +319,10 @@
  </form>
  <div class="saved-head"><div><small class="eyebrow">GUARDADO</small><h2>Lo que hay en Nuestro Hogar</h2></div><span>Editar o eliminar cuando quieras</span></div>
  <div class="editlist" data-editlist></div>
+ <section class="task-history" data-history-section>
+   <div class="saved-head history-head"><div><small class="eyebrow">HISTORIAL</small><h2>✓ Pendientes completados</h2></div><span data-history-count></span></div>
+   <div class="editlist history-list" data-task-history></div>
+ </section>
 </section>
 <section data-largeqr hidden style="text-align:center;padding:18px"><h2>Agua Viva</h2><img data-big-qr alt="QR ampliado de Agua Viva" style="width:290px;max-width:100%;background:#fff;border-radius:10px;margin:20px auto;display:block"><button data-qr-back>Volver al tablón</button></section>
 <p class="notice" role="status" data-notice></p>
@@ -344,6 +348,25 @@
  #hogar7 .items{grid-template-columns:1fr}
  #hogar7 .items .note{min-height:112px}
 }
+</style>
+<style>
+/* Pendientes: check circular y completados fuera de la tablet */
+#hogar7 .pendingrow input[type="checkbox"]{
+ -webkit-appearance:none;appearance:none;
+ width:22px;height:22px;min-width:22px;margin:0;
+ border:2px solid #8e6749;border-radius:50%;
+ background:#fffdf8;display:grid;place-items:center;
+ cursor:pointer;transition:.15s ease;
+}
+#hogar7 .pendingrow input[type="checkbox"]:hover{border-color:#71846a;transform:scale(1.05)}
+#hogar7 .pendingrow input[type="checkbox"]:checked{background:#71846a;border-color:#71846a}
+#hogar7 .pendingrow input[type="checkbox"]:checked:after{content:"✓";color:white;font-weight:800;font-size:13px;line-height:1}
+#hogar7 .task-history{margin-top:30px;padding-top:22px;border-top:1px solid #dbc9b0}
+#hogar7 .history-head{margin-top:0}
+#hogar7 .history-list .historyrow{background:#f3eee5;border-style:dashed;opacity:.92}
+#hogar7 .history-list .historyrow p{text-decoration:line-through;color:#8d7e70}
+#hogar7 .history-list .historyrow .editmeta{color:#71846a}
+#hogar7 .historyempty{padding:14px 0}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="sync.js?v=11"></script>
@@ -476,7 +499,41 @@ function renderNote(){
    box.append(empty);
  }
 }
-function renderPending(){const tasks=items.filter(x=>x.kind==='task').sort((a,b)=>Number(a.done)-Number(b.done));const box=$('[data-pending]');box.replaceChildren();const open=tasks.filter(x=>!x.done);$('[data-pending-count]').textContent=open.length+' por hacer';tasks.slice(0,4).forEach(n=>{const row=document.createElement('label');row.className='pendingrow'+(n.done?' completed':'');const check=document.createElement('input');check.type='checkbox';check.checked=n.done;const text=document.createElement('span');text.textContent=n.text;check.onchange=()=>{n.done=check.checked;persist();};row.append(check,text);box.append(row);});if(!tasks.length){const p=document.createElement('p');p.className='pendingempty';p.textContent='Nada pendiente por ahora. ♡';box.append(p);}else if(tasks.length>4){const p=document.createElement('p');p.className='morehint';p.textContent=`+ ${tasks.length-4} más en el editor`;box.append(p);}}
+function renderPending(){
+ const open=items.filter(x=>x.kind==='task'&&!x.done).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+ const box=$('[data-pending]');
+ box.replaceChildren();
+ $('[data-pending-count]').textContent=open.length+' por hacer';
+ open.slice(0,4).forEach(n=>{
+   const row=document.createElement('label');
+   row.className='pendingrow';
+   const check=document.createElement('input');
+   check.type='checkbox';
+   check.checked=false;
+   check.setAttribute('aria-label','Marcar pendiente como completado');
+   const text=document.createElement('span');
+   text.textContent=n.text;
+   check.onchange=()=>{
+     if(!check.checked)return;
+     n.done=true;
+     renderPending();
+     persist();
+   };
+   row.append(check,text);
+   box.append(row);
+ });
+ if(!open.length){
+   const p=document.createElement('p');
+   p.className='pendingempty';
+   p.textContent='Nada pendiente por ahora. ♡';
+   box.append(p);
+ }else if(open.length>4){
+   const p=document.createElement('p');
+   p.className='morehint';
+   p.textContent=`+ ${open.length-4} más en el editor`;
+   box.append(p);
+ }
+}
 function eventSort(a,b){return (a.eventDate+(a.eventTime||'99:99')).localeCompare(b.eventDate+(b.eventTime||'99:99'));}
 function renderAgenda(){
  const today=localDate(new Date());
@@ -513,7 +570,96 @@ function setKind(kind){
 root.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>setKind(b.dataset.kind));
 function reset(){editId=null;form.reset();setAuthor('Franklin');setKind('note');$('[data-cancel]').hidden=true;form.elements.text.setCustomValidity('');calendarCursor=new Date();renderCalendar();}
 function datePretty(n){if(!n.eventDate)return '';const d=new Date(n.eventDate+'T12:00:00');return new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',year:'numeric'}).format(d)+(n.eventTime?' · '+n.eventTime:'');}
-function renderEditor(){const box=$('[data-editlist]');box.replaceChildren();items.forEach(n=>{const row=document.createElement('article');row.className='editrow'+(n.kind==='event'?' eventrow':'');const meta=document.createElement('div');meta.className='editmeta';const kindLabel=n.kind==='note'?'Mensaje':n.kind==='task'?(n.done?'Hecho':'Pendiente'):'Agenda';meta.textContent=n.author+' · '+kindLabel+(n.kind==='event'?' · '+datePretty(n):'');const p=document.createElement('p');p.textContent=n.text;const actions=document.createElement('div');actions.className='editactions';actions.append(button('Editar',()=>{editId=n.id;setAuthor(n.author);setKind(n.kind);form.elements.text.value=n.text;if(n.kind==='event'){form.elements.eventDate.value=n.eventDate||'';form.elements.eventTime.value=n.eventTime||'';if(n.eventDate)calendarCursor=new Date(n.eventDate+'T12:00:00');renderCalendar();}$('[data-cancel]').hidden=false;form.scrollIntoView({block:'start',behavior:'smooth'});}));if(n.kind==='task')actions.append(button(n.done?'Volver a pendiente':'Marcar hecho',()=>{n.done=!n.done;persist();}));actions.append(button('Eliminar',()=>{items=items.filter(x=>x.id!==n.id);if(editId===n.id)reset();persist();tell('Eliminado.');}));row.append(meta,p,actions);box.append(row);});if(!items.length){const p=document.createElement('p');p.className='empty';p.textContent='Todo está en cero. Añade el primer mensaje, pendiente o evento desde el editor.';box.append(p);}}
+function renderEditor(){
+ const box=$('[data-editlist]');
+ const history=$('[data-task-history]');
+ box.replaceChildren();
+ if(history)history.replaceChildren();
+
+ const active=items.filter(n=>!(n.kind==='task'&&n.done));
+ active.forEach(n=>{
+   const row=document.createElement('article');
+   row.className='editrow'+(n.kind==='event'?' eventrow':'');
+   const meta=document.createElement('div');
+   meta.className='editmeta';
+   const kindLabel=n.kind==='note'?'Mensaje':n.kind==='task'?'Pendiente':'Agenda';
+   meta.textContent=n.author+' · '+kindLabel+(n.kind==='event'?' · '+datePretty(n):'');
+   const p=document.createElement('p');
+   p.textContent=n.text;
+   const actions=document.createElement('div');
+   actions.className='editactions';
+   actions.append(button('Editar',()=>{
+     editId=n.id;
+     setAuthor(n.author);
+     setKind(n.kind);
+     form.elements.text.value=n.text;
+     if(n.kind==='event'){
+       form.elements.eventDate.value=n.eventDate||'';
+       form.elements.eventTime.value=n.eventTime||'';
+       if(n.eventDate)calendarCursor=new Date(n.eventDate+'T12:00:00');
+       renderCalendar();
+     }
+     $('[data-cancel]').hidden=false;
+     form.scrollIntoView({block:'start',behavior:'smooth'});
+   }));
+   if(n.kind==='task')actions.append(button('Marcar hecho',()=>{
+     n.done=true;
+     persist();
+     tell('Pendiente completado y enviado al historial.');
+   }));
+   actions.append(button('Eliminar',()=>{
+     items=items.filter(x=>x.id!==n.id);
+     if(editId===n.id)reset();
+     persist();
+     tell('Eliminado.');
+   }));
+   row.append(meta,p,actions);
+   box.append(row);
+ });
+
+ if(!active.length){
+   const p=document.createElement('p');
+   p.className='empty';
+   p.textContent='No hay elementos activos ahora mismo.';
+   box.append(p);
+ }
+
+ const doneTasks=items.filter(n=>n.kind==='task'&&n.done).sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0));
+ const historyCount=$('[data-history-count]');
+ if(historyCount)historyCount.textContent=doneTasks.length?doneTasks.length+(doneTasks.length===1?' completado':' completados'):'';
+
+ if(history){
+   doneTasks.forEach(n=>{
+     const row=document.createElement('article');
+     row.className='editrow historyrow';
+     const meta=document.createElement('div');
+     meta.className='editmeta';
+     meta.textContent=n.author+' · Completado';
+     const p=document.createElement('p');
+     p.textContent=n.text;
+     const actions=document.createElement('div');
+     actions.className='editactions';
+     actions.append(button('Reabrir',()=>{
+       n.done=false;
+       persist();
+       tell('Pendiente devuelto a la lista.');
+     }));
+     actions.append(button('Eliminar definitivamente',()=>{
+       items=items.filter(x=>x.id!==n.id);
+       persist();
+       tell('Eliminado del historial.');
+     }));
+     row.append(meta,p,actions);
+     history.append(row);
+   });
+   if(!doneTasks.length){
+     const p=document.createElement('p');
+     p.className='empty historyempty';
+     p.textContent='Todavía no hay pendientes completados.';
+     history.append(p);
+   }
+ }
+}
 function renderSelectedDay(){const box=$('[data-day-agenda]'),label=$('[data-selected-date]');if(!box||!label)return;const iso=form.elements.eventDate.value||localDate(new Date());const d=new Date(iso+'T12:00:00');label.textContent=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(d);box.replaceChildren();const dayEvents=items.filter(x=>x.kind==='event'&&x.eventDate===iso).sort(eventSort);if(!dayEvents.length){const p=document.createElement('div');p.className='day-empty';p.textContent='Nada anotado para este día. Puedes añadirlo debajo.';box.append(p);return;}dayEvents.forEach(n=>{const row=document.createElement('div');row.className='day-event';const tm=document.createElement('time');tm.textContent=n.eventTime||'—';const copy=document.createElement('span');copy.textContent=n.text;const who=document.createElement('small');who.textContent=n.author;row.append(tm,copy,who);box.append(row);});}
 function renderCalendar(){const grid=$('[data-cal-grid]');if(!grid)return;grid.replaceChildren();const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();$('[data-cal-title]').textContent=new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric'}).format(calendarCursor);['L','M','X','J','V','S','D'].forEach(x=>{const e=document.createElement('div');e.className='caldow';e.textContent=x;grid.append(e);});const first=new Date(y,m,1);const offset=(first.getDay()+6)%7;for(let i=0;i<offset;i++){const e=document.createElement('div');e.className='calblank';grid.append(e);}const last=new Date(y,m+1,0).getDate(),today=localDate(new Date()),selected=form.elements.eventDate.value;for(let day=1;day<=last;day++){const d=new Date(y,m,day),iso=localDate(d);const b=document.createElement('button');b.type='button';b.className='calday'+(iso===today?' today':'')+(iso===selected?' selected':'')+(items.some(x=>x.kind==='event'&&x.eventDate===iso)?' has-event':'');b.textContent=day;b.onclick=()=>{form.elements.eventDate.value=iso;renderCalendar();};grid.append(b);}renderSelectedDay();}
 $('[data-cal-prev]').onclick=()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()-1,1);renderCalendar();};$('[data-cal-next]').onclick=()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);renderCalendar();};form.elements.eventDate.onchange=()=>{if(form.elements.eventDate.value)calendarCursor=new Date(form.elements.eventDate.value+'T12:00:00');renderCalendar();};
