@@ -335,7 +335,7 @@
 </style>
 <section id="approved-editor-overlay" aria-label="Editor de Nuestro Hogar">
   <button id="approved-editor-close" type="button">← Volver al hogar</button>
-  <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="editor.html?v=11"></iframe>
+  <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="editor.html?v=12"></iframe>
 </section>
 <style>
 /* Tablón multimensaje: varias notas visibles simultáneamente */
@@ -369,7 +369,7 @@
 #hogar7 .historyempty{padding:14px 0}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
-<script src="sync.js?v=11"></script>
+<script src="sync.js?v=12"></script>
 <script>
 (()=>{'use strict';
 const root=document.getElementById('hogar7'),$=s=>root.querySelector(s),key='franklin-andrea-panel-v11-clean';
@@ -671,7 +671,7 @@ function buildEditorQr(){
  const box=document.querySelector('[data-editor-qr-box]');
  if(!box)return;
  box.innerHTML='';
- const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=11';
+ const target='https://fraalfavi-oss.github.io/CASA-TABLET-/editor.html?v=12';
  const img=document.createElement('img');
  img.alt='QR para editar Nuestro Hogar';
  img.width=90; img.height=90;
