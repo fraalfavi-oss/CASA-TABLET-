@@ -219,7 +219,7 @@ async function init(){
 function subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)}
 function subscribeStatus(fn){statusListeners.add(fn);fn({database:true,realtime,writing,initialized,lastSync,dbUrl:SUPABASE_URL});return()=>statusListeners.delete(fn)}
 function makeId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
-function editorUrl(){const u=new URL('editor.html',location.href);u.search='';u.hash='';u.searchParams.set('v','11');return u.toString()}
+function editorUrl(){const u=new URL('editor.html',location.href);u.search='';u.hash='';u.searchParams.set('v','12');return u.toString()}
 
 window.HogarSync={
   init,
