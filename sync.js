@@ -193,7 +193,7 @@
   function subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);}
   function subscribeStatus(fn){statusListeners.add(fn);fn({database:!!dbUrl,realtime,writing,initialized,lastSync,dbUrl});return()=>statusListeners.delete(fn);}
   function makeId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
-  function editorUrl(){if(!dbUrl)return'';const u=new URL('editor.html',location.href);u.search='';u.hash='';u.searchParams.set('db',dbUrl);u.searchParams.set('v','8');return u.toString();}
+  function editorUrl(){if(!dbUrl)return'';const u=new URL('editor.html',location.href);u.search='';u.hash='';u.searchParams.set('db',dbUrl);u.searchParams.set('v','9');return u.toString();}
 
   window.HogarSync={init,refresh,mutate,writeWhole,subscribe,subscribeStatus,getState,makeId,editorUrl,getDbUrl:()=>dbUrl,deviceId};
 })();
