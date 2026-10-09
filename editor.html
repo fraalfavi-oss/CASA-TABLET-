@@ -333,6 +333,7 @@
   <button id="approved-editor-close" type="button">← Volver al hogar</button>
   <iframe id="approved-editor-frame" title="Editar Nuestro Hogar" src="editor.html?v=11"></iframe>
 </section>
+<script>if(location.hash!=='#editar'&&location.hash!=='#e'){history.replaceState(null,'',location.pathname+location.search+'#editar');}</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="sync.js?v=11"></script>
 <script>
@@ -511,30 +512,6 @@ window.addEventListener('message',e=>{if(e.data&&e.data.type==='hogar-data-chang
 </script>
 </div>
 <script>
-(()=>{
-  const overlay=document.getElementById('approved-editor-overlay');
-  const frame=document.getElementById('approved-editor-frame');
-  const close=document.getElementById('approved-editor-close');
-  if(!overlay) return;
-  function openEditor(){
-    overlay.classList.add('open');
-    document.documentElement.style.overflow='hidden';
-    setTimeout(()=>{try{if(frame&&frame.contentWindow)frame.contentWindow.focus();}catch(e){}},120);
-  }
-  function closeEditor(){
-    overlay.classList.remove('open');
-    document.documentElement.style.overflow='';
-    if(location.hash==='#e'||location.hash==='#editar') history.replaceState(null,'',location.pathname+location.search);
-    document.querySelector('[data-board]').hidden=false;
-  }
-  // Override all editor entry buttons so they open the approved mobile editor.
-  document.querySelectorAll('[data-editor],[data-manage-tasks],[data-manage-agenda]').forEach(btn=>{
-    btn.onclick=(ev)=>{ev.preventDefault(); history.replaceState(null,'',location.pathname+location.search+'#e'); openEditor();};
-  });
-  close.onclick=closeEditor;
-  window.addEventListener('hashchange',()=>{ openEditor(); });
-  openEditor();
-  window.addEventListener('storage',()=>{ try{ if(frame && frame.contentWindow){} }catch(e){} });
-})();
+(()=>{const overlay=document.getElementById('approved-editor-overlay');if(overlay)overlay.remove();})();
 </script>
 </body></html>
