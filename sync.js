@@ -140,11 +140,18 @@
     setInterval(()=>{if(!document.hidden)refresh(false).catch(()=>{});},60*60*1000);
   }
 
-  async function init({seedItems=[]}={}){
+  async function init({seedItems=[],allowCreate=true}={}){
     if(initialized)return getState();
     const p=new URLSearchParams(location.search).get('db');
     let saved='';try{saved=localStorage.getItem(DB_KEY)||'';}catch(e){}
-    if(validDb(p))setDb(p);else if(validDb(saved))setDb(saved);else await createDb(seedItems);
+    if(validDb(p))setDb(p);
+    else if(validDb(saved))setDb(saved);
+    else if(allowCreate){
+      if(!seedItems.length){
+        try{const old=JSON.parse(localStorage.getItem('franklin-andrea-panel-v11-clean')||'[]');if(Array.isArray(old))seedItems=old;}catch(e){}
+      }
+      await createDb(seedItems);
+    }else throw new Error('Este editor no tiene una base compartida. Escanea el QR NUEVO que aparece en la tablet.');
     await refresh(true);
     initialized=true;emitStatus();startRealtime();
     return getState();
